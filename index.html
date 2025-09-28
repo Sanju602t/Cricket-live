@@ -660,8 +660,7 @@
 
 <div class="container">
     <video id="videoPlayer" controls></video>
-    
-    <div class="live-server-box" id="live-box">
+<div class="live-server-box" id="live-box">
         <button id="live-back-button" class="server-button back-button" style="display:none;">← Back</button>
         <p style="font-size: 1em; color: #5eff5e; margin-bottom: -10px; font-weight: 600;">👇 {Select Server/Channel} 👇</p>
         <h1 class="live-heading">Live Servers</h1>
@@ -669,9 +668,7 @@
             <p id="live-loading">Loading... <span class="loading"></span></p>
         </div>
         <p id="live-message"></p>
-    </div>
-
-    <div class="dead-server-box" id="dead-box">
+    </div><div class="dead-server-box" id="dead-box">
         <button id="dead-back-button" class="server-button back-button" style="display:none;">← Back</button>
         <h2 class="dead-heading">Dead Servers</h2>
         <div class="buttons-container" id="dead-buttons-container">
@@ -687,23 +684,8 @@
     <button>OK</button>
   </form>
 </dialog>
-
 <script>
-    // Enhanced Splash Screen Functionality
-    document.addEventListener('DOMContentLoaded', function() {
-        const splashScreen = document.getElementById('splash-screen');
-        
-        // Hide splash screen after 3.5 seconds
-        setTimeout(function() {
-            splashScreen.classList.add('fade-out');
-            
-            // Remove splash screen from DOM after fade out animation completes
-            setTimeout(function() {
-                splashScreen.style.display = 'none';
-            }, 800);
-        }, 3500);
-    });
-
+    // Firebase Configuration
     const firebaseConfig = {
       apiKey: "AIzaSyADkJHCkcN_GYcgO5isyo3lUH6_77xirJ0",
       authDomain: "shadow-movies.firebaseapp.com",
@@ -714,10 +696,11 @@
       appId: "1:167005811786:web:8c9e761b17227bbac9e2b3",
       measurementId: "G-B1FMSECJCV"
     };
-
+    // Initialize Firebase
     firebase.initializeApp(firebaseConfig);
     const database = firebase.database();
     
+    // DOM Elements
     const video = document.getElementById('videoPlayer');
     const dialog = document.getElementById('fullscreen-dialog');
     
@@ -730,30 +713,79 @@
     const liveLoading = document.getElementById('live-loading');
     const deadLoading = document.getElementById('dead-loading');
 
+    // HLS Stream Loader with better error handling
     function loadHLSStream(url) {
-        if(Hls.isSupported()) {
-            const hls = new Hls();
+        console.log('Loading HLS stream:', url);
+        
+        // Clear previous source
+        video.src = '';
+        if (Hls.isSupported()) {
+            const hls = new Hls({
+                debug: true,
+                enableWorker: true,
+                lowLatencyMode: true,
+                backBufferLength: 90
+            });
+            
             hls.loadSource(url);
             hls.attachMedia(video);
+            
             hls.on(Hls.Events.MANIFEST_PARSED, function() {
-                video.play();
-                if (dialog) {
-                    dialog.showModal();
+                console.log('HLS manifest parsed, attempting to play...');
+                video.play().then(() => {
+                    console.log('Video playback started successfully');
+                    if (dialog) {
+                        dialog.showModal();
+                    }
+                }).catch(error => {
+                    console.error('Video play failed:', error);
+                    alert('Video play failed: ' + error.message);
+                });
+            });
+            
+            hls.on(Hls.Events.ERROR, function(event, data) {
+                console.error('HLS Error:', data);
+                if (data.fatal) {
+                    switch(data.type) {
+                        case Hls.ErrorTypes.NETWORK_ERROR:
+                            console.error('Network error, trying to recover...');
+                            hls.startLoad();
+                            break;
+                        case Hls.ErrorTypes.MEDIA_ERROR:
+                            console.error('Media error, trying to recover...');
+                            hls.recoverMediaError();
+                            break;
+                        default:
+                            console.error('Fatal HLS error, cannot recover');
+                            alert('Video load error: ' + data.details);
+                            break;
+                    }
                 }
             });
-        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+            // For Safari and other native HLS support
             video.src = url;
             video.addEventListener('loadedmetadata', function() {
-                video.play();
-                if (dialog) {
-                    dialog.showModal();
-                }
+                console.log('Native HLS loaded, attempting to play...');
+                video.play().then(() => {
+                    console.log('Native HLS playback started');
+                    if (dialog) {
+                        dialog.showModal();
+                    }
+                }).catch(error => {
+                    console.error('Native HLS play failed:', error);
+                    alert('Video play failed: ' + error.message);
+                });
+            });
+            
+            video.addEventListener('error', function(e) {
+                console.error('Native HLS Error:', e);
+                alert('Native HLS video error occurred');
             });
         } else {
             alert('Sorry, aapka browser HLS streams ko support nahi karta.');
         }
     }
-
     // Function to get a color class based on index
     function getFolderColorClass(index) {
         const colorIndex = (index % 8) + 1;
@@ -774,7 +806,6 @@
             document.getElementById(message).innerText = 'Sorry, koi servers abhi available nahi hain.';
             return;
         }
-
         const keys = Object.keys(data);
         const hasFolders = keys.some(key => typeof data[key] === 'object' && data[key].name === undefined);
 
@@ -809,14 +840,17 @@
             container.innerHTML = '';
             keys.forEach((key, index) => {
                 const server = data[key];
-                const button = document.createElement('button');
-                button.className = 'server-button live-server-button';
-                button.classList.add(getServerColorClass(index));
-                button.innerText = server.name;
-                button.onclick = () => {
-                    loadHLSStream(server.url);
-                };
-                container.appendChild(button);
+                if (server && server.url) {
+                    const button = document.createElement('button');
+                    button.className = 'server-button live-server-button';
+                    button.classList.add(getServerColorClass(index));
+                    button.innerText = server.name || `Server ${index + 1}`;
+                    button.onclick = () => {
+                        console.log('Server clicked:', server.name, server.url);
+                        loadHLSStream(server.url);
+                    };
+                    container.appendChild(button);
+                }
             });
         }
         
@@ -837,9 +871,9 @@
         if (loadingElement) {
             loadingElement.style.display = 'block';
         }
-        
         linksRef.on('value', (snapshot) => {
             const data = snapshot.val();
+            console.log('Firebase data received for', path, data);
             renderButtons(data, container, box, backButton, isDeadServer);
 
             const heading = box.querySelector(isDeadServer ? 'h2' : 'h1');
@@ -863,11 +897,59 @@
         });
     }
 
-    // Initialize the app with real Firebase data
+    // Enhanced Splash Screen Functionality
     document.addEventListener('DOMContentLoaded', function() {
-        fetchAndRenderAllLinks('streaming_links', liveButtonsContainer, liveBox, liveBackButton, false);
-        fetchAndRenderAllLinks('dead_streaming_links', deadButtonsContainer, deadBox, deadBackButton, true);
+        const splashScreen = document.getElementById('splash-screen');
+        
+        console.log('DOM loaded, initializing app...');
+        
+        // Hide splash screen after 3.5 seconds and initialize app
+        setTimeout(function() {
+            splashScreen.classList.add('fade-out');
+            
+            // Initialize Firebase and load data after splash
+            setTimeout(function() {
+                splashScreen.style.display = 'none';
+                
+                // Initialize the app with real Firebase data
+                console.log('Loading Firebase data...');
+                fetchAndRenderAllLinks('streaming_links', liveButtonsContainer, liveBox, liveBackButton, false);
+                fetchAndRenderAllLinks('dead_streaming_links', deadButtonsContainer, deadBox, deadBackButton, true);
+                
+            }, 800);
+        }, 3500);
     });
+
+    // Add video error listener for better debugging
+    video.addEventListener('error', function(e) {
+        console.error('Video Error:', video.error);
+        console.error('Video networkState:', video.networkState);
+        console.error('Video readyState:', video.readyState);
+        
+        switch(video.error.code) {
+            case video.error.MEDIA_ERR_ABORTED:
+                alert('Video loading aborted.');
+                break;
+            case video.error.MEDIA_ERR_NETWORK:
+                alert('Network error occurred while loading video.');
+                break;
+            case video.error.MEDIA_ERR_DECODE:
+                alert('Video decoding error.');
+                break;
+            case video.error.MEDIA_ERR_SRC_NOT_SUPPORTED:
+                alert('Video format not supported.');
+                break;
+            default:
+                alert('Unknown video error occurred.');
+                break;
+        }
+    });
+
+    // Add video event listeners for debugging
+    video.addEventListener('loadstart', () => console.log('Video load started'));
+    video.addEventListener('loadeddata', () => console.log('Video data loaded'));
+    video.addEventListener('canplay', () => console.log('Video can play'));
+    video.addEventListener('playing', () => console.log('Video playing'));
 </script>
 
 </body>
